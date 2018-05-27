@@ -73,7 +73,6 @@ void* foo(void* arg)
     tc->barrier->barrier();
 
 
-
 }
     
 

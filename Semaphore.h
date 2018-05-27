@@ -6,8 +6,16 @@
 #define EX3_SEMAPHORE_H
 
 
+#include <atomic>
+
 class Semaphore {
 
+    explicit Semaphore(int n):n_(n){}
+    void down();
+    void up();
+
+private:
+    std::atomic<int> n_;
 };
 
 

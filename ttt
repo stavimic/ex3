@@ -1,0 +1,11 @@
+class Semaphore {
+
+    Semaphore(int n):n_(n){}
+    void down(){
+        while(n_ <= 0){}
+        --n_; }
+    void up(){ ++n_; }
+
+private:
+    std::atomic<int> n_;
+};
