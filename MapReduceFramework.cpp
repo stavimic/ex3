@@ -24,6 +24,8 @@ struct ThreadContext {
     std::atomic<int>* atomic_counter;
 
     std::vector<std::pair<K1*, V1*>> *inputPairs;
+    std::vector<std::pair<K1*, V1*>> *myValues;
+
     std::vector<std::pair<K2*, V2*>> *intermediatePairs;
 
 };
@@ -39,6 +41,30 @@ void emit3 (K3* key, V3* value, void* context){}
 
 void* foo(void* arg)
 {
+    ThreadContext* tc = (ThreadContext*) arg;
+
+    bool flag = true;
+    //Retrieve the next input element:
+    while (flag)
+    {
+        int nextIndex = (*(tc->atomic_counter))++;
+        if (nextIndex >= (*(tc->inputPairs)).size())
+        {
+            flag = false;
+            break;
+
+        }
+        std::pair<K1*, V1*> nextPair = (*(tc->inputPairs))[nextIndex];
+        (tc->myValues)->push_back(nextPair);  // Add the next pair to tc's input data
+    }
+
+    // Finished with the input processing, now perform the map phase:
+
+
+
+
+
+
 
 }
 
