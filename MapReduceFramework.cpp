@@ -1,4 +1,5 @@
 #include <atomic>
+#include <iostream>
 #include "MapReduceFramework.h"
 #include "MapReduceClient.h"
 #include "Barrier.h"
@@ -23,6 +24,8 @@ struct ThreadContext {
     Barrier* barrier;
     std::atomic<int>* atomic_counter;
 
+    const MapReduceClient* client;
+
     std::vector<std::pair<K1*, V1*>> *inputPairs;
     std::vector<std::pair<K1*, V1*>> *myValues;
 
@@ -43,6 +46,7 @@ void emit3 (K3* key, V3* value, void* context){}
 void* foo(void* arg)
 {
     ThreadContext* tc = (ThreadContext*) arg;
+    tc->myValues = new std::vector<std::pair<K1*, V1*>>;
 
     bool flag = true;
     //Retrieve the next input element:
@@ -79,7 +83,7 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     std::atomic<int> atomic_counter(0);
 
     for (int i = 0; i < multiThreadLevel; ++i) {
-        contexts[i] = {i, &barrier, &atomic_counter, nullptr, nullptr};
+        contexts[i] = {i, &barrier, &atomic_counter, &client , nullptr ,nullptr, nullptr};
     }
 
     for (int i = 0; i < multiThreadLevel; ++i) {
