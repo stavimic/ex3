@@ -25,7 +25,6 @@ struct ThreadContext {
     std::atomic<int>* atomic_counter;
 
     const MapReduceClient* client;
-
     std::vector<std::pair<K1*, V1*>> *inputPairs;
     std::vector<std::pair<K1*, V1*>> *myValues;
     std::vector<std::pair<K2*, V2*>> *intermediatePairs;
@@ -34,7 +33,7 @@ struct ThreadContext {
 
 void emit2 (K2* key, V2* value, void* context){
     auto * tc = (ThreadContext*) context;
-    tc->intermediatePairs->push_back(std::pair(key, value));
+    tc->intermediatePairs->push_back(std::pair<K2*, V2*>(key, value));
 
 }
 void emit3 (K3* key, V3* value, void* context){}
@@ -46,6 +45,7 @@ void* foo(void* arg)
 {
     ThreadContext* tc = (ThreadContext*) arg;
     tc->myValues = new std::vector<std::pair<K1*, V1*>>;
+    tc->intermediatePairs = new std::vector<std::pair<K2*, V2*>>;
 
     bool flag = true;
     //Retrieve the next input element:
@@ -63,12 +63,15 @@ void* foo(void* arg)
     }
 
     // Finished with the input processing, now perform the map phase:
-    for(auto pair : *(tc->myValues)){
+    for(auto pair : *(tc->myValues)) {
         (tc->client)->map(pair.first, pair.second, tc);
+        for (auto elem : *tc->intermediatePairs)
+            std::cout << elem.first << elem.second << std::endl;
     }
+}
     
 
-}
+
 
 
 void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputVec, OutputVec& outputVec, int multiThreadLevel)
