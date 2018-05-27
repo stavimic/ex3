@@ -102,14 +102,14 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     std::atomic<int> atomic_counter(0);
 
     // Create the vector of IntermediateVecs, one for each thread
-    std::vector<IntermediateVec*>* inter_vec = new std::vector;
+    std::vector<IntermediateVec*>* inter_vec = new std::vector<IntermediateVec*>();
     for(int i = 0; i < multiThreadLevel; i++)
     {
         inter_vec->push_back(new IntermediateVec);
     }
 
     // Vector of all the shuffled pairs:
-    std::vector<IntermediateVec*>* shuffledPairs = new std::vector;
+    std::vector<IntermediateVec*>* shuffledPairs = new std::vector<IntermediateVec*>();
 
 
 
