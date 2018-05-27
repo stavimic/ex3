@@ -36,7 +36,7 @@ struct ThreadContext {
 };
 
 void emit2 (K2* key, V2* value, void* context){
-    auto * tc = (ThreadContext*) context;
+    auto * tc = (ThreadContext*) context;4
 //    tc->intermediatePairs->push_back(std::pair<K2*, V2*>(key, value));
     ((*(tc->intermediatePairs))[tc->threadID])->push_back(
             std::pair<K2*, V2*>(key, value)
@@ -49,7 +49,23 @@ void emit2 (K2* key, V2* value, void* context){
 void emit3 (K3* key, V3* value, void* context){}
 
 
-void shuffle(){}
+void shuffle(void* context){
+    auto * tc = (ThreadContext*) context;
+    K2* cur_key = nullptr;
+
+    auto num_of_vectors = static_cast<int>((*(tc->intermediatePairs)).size());
+
+    while(true){
+        for(auto intermediate_vec: (*(tc->intermediatePairs))){
+            auto iter = intermediate_vec->rbegin();
+            if(iter->first){
+
+            }
+        }
+
+    }
+
+}
 
 
 
