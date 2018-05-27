@@ -5,6 +5,7 @@
 #include "Barrier.h"
 #include <pthread.h>
 #include <algorithm>    // std::sort
+#include <mutex>
 
 
 
@@ -15,38 +16,47 @@
 
 
 //======================================================== //
-
+std::once_flag shuffled_flag;
 
 struct ThreadContext {
-
-    int threadID;
-    Barrier* barrier;
+    int threadID;  // ID of the current thread
+    Barrier* barrier;  // Barrier to join the threads
     std::atomic<int>* atomic_counter;
 
-    const MapReduceClient* client;
-    const InputVec *inputPairs;
-    std::vector<IntermediateVec*>* intermediatePairs;
-    std::vector<IntermediateVec*>* shuffledPairs;
-    InputVec *myValues;
-    bool startedShuffle;
-    bool finishedShuffle;
-
-
-
+    const MapReduceClient* client;  //Given client
+    const InputVec *inputPairs;  // Input vector
+    std::vector<IntermediateVec*>* intermediatePairs;  // Intermediary vector
+    std::vector<IntermediateVec*>* shuffledPairs;  // Shuffled vector
+    InputVec *myValues;  // Values given to the current threads
+    bool startedShuffle;  // Did we start shuffling yet
+    bool finishedShuffle;  // Did we finish shuffling
+    OutputVec* output_vec;  // Given vector to emit the output
+    pthread_mutex_t* mutex;
 };
 
 void emit2 (K2* key, V2* value, void* context){
     auto * tc = (ThreadContext*) context;
-//    tc->intermediatePairs->push_back(std::pair<K2*, V2*>(key, value));
+
+    // Lock mutex and push the pair to the intermediate vector:
+    pthread_mutex_lock((tc->mutex));
+
     ((*(tc->intermediatePairs))[tc->threadID])->push_back(
-            std::pair<K2*, V2*>(key, value)
-    );
+            std::pair<K2*, V2*>(key, value));
+
+    pthread_mutex_unlock((tc->mutex));
 
 }
 
 
+void emit3 (K3* key, V3* value, void* context)
+{
+    auto * tc = (ThreadContext*) context;
 
-void emit3 (K3* key, V3* value, void* context){}
+    // Lock mutex and push the pair to the output vector:
+    pthread_mutex_lock((tc->mutex));
+    (tc->output_vec)->push_back(std::pair<K3*, V3*>(key, value));
+    pthread_mutex_unlock((tc->mutex));
+}
 
 
 void shuffle(){}
@@ -82,6 +92,11 @@ void* foo(void* arg)
     std::sort(tc->intermediatePairs->begin(), tc->intermediatePairs->end());
     tc->barrier->barrier();
 
+    std::call_once(shuffled_flag, []()
+    {
+        shuffle();
+    });
+
 
 }
     
@@ -96,18 +111,18 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     ThreadContext contexts[multiThreadLevel];
     Barrier barrier(multiThreadLevel);
     std::atomic<int> atomic_counter(0);
+    pthread_mutex_t mutex(PTHREAD_MUTEX_INITIALIZER);
+
 
     // Create the vector of IntermediateVecs, one for each thread
-    std::vector<IntermediateVec*>* inter_vec = new std::vector<IntermediateVec*>();
+    auto inter_vec = new std::vector<IntermediateVec*>();
     for(int i = 0; i < multiThreadLevel; i++)
     {
         inter_vec->push_back(new IntermediateVec);
     }
 
     // Vector of all the shuffled pairs:
-    std::vector<IntermediateVec*>* shuffledPairs = new std::vector<IntermediateVec*>();
-
-
+    auto shuffledPairs = new std::vector<IntermediateVec*>();
 
     // Initialize contexts
     for (int i = 0; i < multiThreadLevel; ++i) {
@@ -122,7 +137,9 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
                        shuffledPairs,
                         new InputVec,
                         false,
-                        false
+                        false,
+                        &outputVec,
+                        &mutex
                 };
     }
 
