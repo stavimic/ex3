@@ -28,9 +28,11 @@ struct ThreadContext {
 
     const MapReduceClient* client;
     const InputVec *inputPairs;
-    IntermediateVec *intermediatePairs;
+    std::vector<IntermediateVec*>* intermediatePairs;
+    std::vector<IntermediateVec*>* shuffledPairs;
     InputVec *myValues;
-    bool isShuffled;
+    bool startedShuffle;
+    bool finishedShuffle;
 
 
 
@@ -38,11 +40,19 @@ struct ThreadContext {
 
 void emit2 (K2* key, V2* value, void* context){
     auto * tc = (ThreadContext*) context;
-    tc->intermediatePairs->push_back(std::pair<K2*, V2*>(key, value));
+//    tc->intermediatePairs->push_back(std::pair<K2*, V2*>(key, value));
+    ((*(tc->intermediatePairs))[tc->threadID])->push_back(
+            std::pair<K2*, V2*>(key, value)
+    );
 
 }
+
+
+
 void emit3 (K3* key, V3* value, void* context){}
 
+
+void shuffle(){}
 
 
 
@@ -91,6 +101,17 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     Barrier barrier(multiThreadLevel);
     std::atomic<int> atomic_counter(0);
 
+    // Create the vector of IntermediateVecs, one for each thread
+    std::vector<IntermediateVec*>* inter_vec = new std::vector;
+    for(int i = 0; i < multiThreadLevel; i++)
+    {
+        inter_vec->push_back(new IntermediateVec);
+    }
+
+    // Vector of all the shuffled pairs:
+    std::vector<IntermediateVec*>* shuffledPairs = new std::vector;
+
+
 
     // Initialize contexts
     for (int i = 0; i < multiThreadLevel; ++i) {
@@ -101,8 +122,10 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
                         &atomic_counter,
                         &client,
                        &inputVec,
-                       new IntermediateVec,
-                       new InputVec,
+                       inter_vec,
+                       shuffledPairs,
+                        new InputVec,
+                        false,
                         false
                 };
     }
