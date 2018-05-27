@@ -30,10 +30,11 @@ struct ThreadContext {
 
 };
 
+void emit2 (K2* key, V2* value, void* context){
+    auto * tc = (ThreadContext*) context;
+    tc->intermediatePairs->push_back(std::pair(key, value));
 
-
-
-void emit2 (K2* key, V2* value, void* context){}
+}
 void emit3 (K3* key, V3* value, void* context){}
 
 
@@ -81,9 +82,15 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
         contexts[i] = {i, &barrier, &atomic_counter, nullptr, nullptr};
     }
 
+    for (int i = 0; i < multiThreadLevel; ++i) {
+        pthread_create(threads + i, nullptr, foo, contexts + i);
+    }
 
+    for (int i = 0; i < multiThreadLevel; ++i) {
+        pthread_join(threads[i], nullptr);
+    }
 
-
+    std::cerr << "Finish runMapReduce";
 }
 
 
