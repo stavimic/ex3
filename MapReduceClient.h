@@ -66,5 +66,14 @@ public:
 		const = 0;
 };
 
+     
+
+
+
+
+
+
+
+
 
 #endif //MAPREDUCECLIENT_H
