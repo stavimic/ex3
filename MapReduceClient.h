@@ -66,7 +66,7 @@ public:
 		const = 0;
 };
 
-     
+
 
 
 
