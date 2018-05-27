@@ -28,7 +28,6 @@ struct ThreadContext {
 
     std::vector<std::pair<K1*, V1*>> *inputPairs;
     std::vector<std::pair<K1*, V1*>> *myValues;
-
     std::vector<std::pair<K2*, V2*>> *intermediatePairs;
 
 };
@@ -64,12 +63,10 @@ void* foo(void* arg)
     }
 
     // Finished with the input processing, now perform the map phase:
-
-
-
-
-
-
+    for(auto pair : *(tc->myValues)){
+        (tc->client)->map(pair.first, pair.second, tc);
+    }
+    
 
 }
 
@@ -82,14 +79,17 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     Barrier barrier(multiThreadLevel);
     std::atomic<int> atomic_counter(0);
 
+    // Initialize contexts
     for (int i = 0; i < multiThreadLevel; ++i) {
         contexts[i] = {i, &barrier, &atomic_counter, &client , nullptr ,nullptr, nullptr};
     }
 
+    //Initialize threads
     for (int i = 0; i < multiThreadLevel; ++i) {
         pthread_create(threads + i, nullptr, foo, contexts + i);
     }
 
+    //Wait for threads to finish
     for (int i = 0; i < multiThreadLevel; ++i) {
         pthread_join(threads[i], nullptr);
     }
