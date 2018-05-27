@@ -4,6 +4,7 @@
 #include "MapReduceClient.h"
 #include "Barrier.h"
 #include <pthread.h>
+#include <algorithm>    // std::sort
 
 
 
@@ -29,6 +30,7 @@ struct ThreadContext {
     const InputVec *inputPairs;
     IntermediateVec *intermediatePairs;
     InputVec *myValues;
+    bool isShuffled;
 
 
 
@@ -47,8 +49,7 @@ void emit3 (K3* key, V3* value, void* context){}
 void* foo(void* arg)
 {
     ThreadContext* tc = (ThreadContext*) arg;
-//    tc->myValues = new std::vector<std::pair<K1*, V1*>>;
-//    tc->intermediatePairs = new std::vector<std::pair<K2*, V2*>>;
+
 
     bool flag = true;
     //Retrieve the next input element:
@@ -61,6 +62,7 @@ void* foo(void* arg)
             break;
 
         }
+
         std::pair<K1*, V1*> nextPair = (*(tc->inputPairs))[nextIndex];
         (tc->myValues)->push_back(nextPair);  // Add the next pair to tc's input data
     }
@@ -68,9 +70,13 @@ void* foo(void* arg)
     // Finished with the input processing, now perform the map phase:
     for(auto pair : *(tc->myValues)) {
         (tc->client)->map(pair.first, pair.second, tc);
-        for (auto elem : *tc->intermediatePairs)
-            std::cout << elem.first<< elem.second << std::endl;
     }
+
+    std::sort(tc->intermediatePairs->begin(), tc->intermediatePairs->end());
+    tc->barrier->barrier();
+
+
+
 }
     
 
@@ -96,7 +102,8 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
                         &client,
                        &inputVec,
                        new IntermediateVec,
-                       new InputVec
+                       new InputVec,
+                        false
                 };
     }
 
@@ -104,7 +111,6 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     for (int i = 0; i < multiThreadLevel; ++i) {
         pthread_create(threads + i, nullptr, foo, contexts + i);
     }
-
 
 
     //Wait for threads to finish
