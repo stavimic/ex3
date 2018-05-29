@@ -32,14 +32,14 @@ public:
     }
     char c;
 };
-
-
 class VCount : public V2, public V3{
 public:
     VCount(int count) : count(count) { }
     int count;
 };
 
+
+int sem_value = 0;
 //======================================================== //
 std::once_flag shuffled_flag;
 std::once_flag p_flag;
@@ -100,9 +100,11 @@ bool comp(const std::pair< const K2*, const V2 *> &firstPair,
 
 
 void shuffle(void* context){
-
     auto * tc = (ThreadContext*) context;
+    bool first_iter = true;
     // While there are still keys to reduce:
+
+//    std::cout<< "How Many vectors in intemediatePairs" << tc->intermediatePairs->size() << std::endl;
     while(!(tc->intermediatePairs->empty()))
     {
         auto vectors_iter = tc->intermediatePairs->begin(); // get iterator on the vectors
@@ -125,10 +127,7 @@ void shuffle(void* context){
         auto cur_key = cur_pair.first;
         bool is_key_alone = true;
 
-        std::cout<<(((tc->intermediatePairs)[0])).size()<< std::endl;
-        (((tc->intermediatePairs)[0])).pop_back();
-        std::cout<<(((tc->intermediatePairs)[0])).size()<< std::endl;
-
+        tc->intermediatePairs->front()->pop_back();
         // Create new vectors to hold the values of cur_key :
         auto vec_to_push = new IntermediateVec;
 
@@ -138,11 +137,21 @@ void shuffle(void* context){
         tc->shuffledPairs->push_back(vec_to_push);
         pthread_mutex_unlock((tc->mutex));
 
+        if (vectors_iter ==  tc->intermediatePairs->end())
+        {
+            vectors_iter = tc->intermediatePairs->begin();
+
+        }
+//        first_iter = true;
         // Iterate over the remaining pairs:
         while(vectors_iter !=  tc->intermediatePairs->end())
         {
-            vec_iter = (*vectors_iter)->rbegin();  // End of the current vector
 
+            vec_iter = (*vectors_iter)->rbegin();  // End of the current vector
+            if(first_iter) {
+                vec_iter++;
+                first_iter = false;
+            }
             // Iterate over the vector until finding the same of smaller value:
             while(vec_iter != (*vectors_iter)->rend())
             {
@@ -156,12 +165,12 @@ void shuffle(void* context){
                     vec_iter++;
                     continue;
                 }
-
-                std::cout<<"in here equal" << std::endl;
-
                 // case equal
                 auto to_push = std::pair<K2*, V2*>(next_pair.first, next_pair.second);
                 pthread_mutex_lock((tc->mutex));
+
+//                (*vectors_iter)->pop_back();
+
                 auto iter = (*vectors_iter)->begin();
                 while(*iter < *vec_iter || *vec_iter < *iter)
                 {
@@ -170,7 +179,6 @@ void shuffle(void* context){
 
                 vec_iter ++;
                 (*vectors_iter)->erase(iter);
-
                 tc->shuffledPairs->back()->push_back(to_push);
                 sem_post((tc->semi));
                 is_key_alone = false;
@@ -183,7 +191,7 @@ void shuffle(void* context){
                 vectors_iter = (tc->intermediatePairs)->erase(vectors_iter);
                 continue;
             }
-            vectors_iter++;
+            ++vectors_iter;
         }
         if (is_key_alone)
         {
@@ -192,8 +200,6 @@ void shuffle(void* context){
     }
     tc->finishedShuffle = true;
 }
-
-
 
 void* foo(void* arg)
 {
@@ -226,9 +232,41 @@ void* foo(void* arg)
     std::sort(toSort->begin(), toSort->end(), comp);
     tc->barrier->barrier();
 
+    if(debug) {
+        mtx.lock();
+        std::cerr << "ThreadID Before Shuffle " << tc->threadID << std::endl;
+        std::cerr << "Size:  " << (*(tc->intermediatePairs))[tc->threadID]->size() << std::endl;
+        for (auto vec: *(*(tc->intermediatePairs))[tc->threadID]) {
+            char c = ((const KChar *) vec.first)->c;
+            int count = ((const VCount *) vec.second)->count;
+            std::cerr << "The character " << c << " appeared " << count << " time%s" << std::endl;
+        }
+        std::flush(std::cerr);
+        mtx.unlock();
+    }
+
     std::call_once(shuffled_flag, [&tc]()
     {
         shuffle(tc);
+    });
+
+    tc->barrier->barrier();
+
+    std::call_once(p_flag, [&tc]()
+    {
+        if(debug2) {
+            for(int i = 0; i < 21; i++) {
+
+                std::cerr << "Size:  " << (*(tc->shuffledPairs))[i]->size() << std::endl;
+                for (auto vec: *(*(tc->shuffledPairs))[i]) {
+                    char c = ((const KChar *) vec.first)->c;
+                    int count = ((const VCount *) vec.second)->count;
+                    std::cerr << "The character " << c << " appeared " << count << " time%s" << std::endl;
+                }
+                std::flush(std::cerr);
+
+            }
+        }
     });
 
     tc->barrier->barrier();  // todo delete this
@@ -253,11 +291,19 @@ void* foo(void* arg)
 
     while((!(tc->finishedShuffle)) || (!tc->shuffledPairs->empty()))
     {
+//        sem_wait((tc->semi)); // Wait until there is an available shuffled vector to reduce
+//        auto to_reduce = tc->shuffledPairs->back();  // Get the last shuffled vector
+//        tc->shuffledPairs->pop_back();  // Delete the last shuffled vector
+//        (tc->client)->reduce(to_reduce, tc);
+
         sem_wait((tc->semi)); // Wait until there is an available shuffled vector to reduce
+        auto index = (*(tc->index_counter))++;
+        IntermediateVec* to_reduce = (*(tc->shuffledPairs))[index];  // Get the next shuffled vector
 
         auto index = (*(tc->index_counter))++;
         IntermediateVec* to_reduce = (*(tc->shuffledPairs))[index];  // Get the next shuffled vector
         (tc->client)->reduce(to_reduce, tc);
+
 
 
 //        auto to_reduce = tc->shuffledPairs->back();  // Get the last shuffled vector
@@ -278,7 +324,6 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     Barrier barrier(multiThreadLevel);
     std::atomic<int> atomic_counter(0);
     std::atomic<int> index_counter(0);
-
     pthread_mutex_t mutex(PTHREAD_MUTEX_INITIALIZER);
     pthread_mutex_t mutex_r(PTHREAD_MUTEX_INITIALIZER);
 
@@ -311,6 +356,8 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
                         false,
                         &outputVec,
                         &mutex,
+                        sem,
+                        &index_counter
                         &mutex_r,
                         sem,
                         &index_counter
