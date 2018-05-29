@@ -33,9 +33,18 @@ public:
     char c;
 };
 
-int sem_value = 0;
+
+class VCount : public V2, public V3{
+public:
+    VCount(int count) : count(count) { }
+    int count;
+};
+
 //======================================================== //
 std::once_flag shuffled_flag;
+std::once_flag p_flag;
+
+
 
 struct ThreadContext {
     int threadID;  // ID of the current thread
@@ -50,7 +59,10 @@ struct ThreadContext {
     bool finishedShuffle;  // Did we finish shuffling
     OutputVec* output_vec;  // Given vector to emit the output
     pthread_mutex_t* mutex;
+    pthread_mutex_t* reduce_mutex;
     sem_t* semi;
+    std::atomic<int>* index_counter;
+
 
 };
 
@@ -88,8 +100,8 @@ bool comp(const std::pair< const K2*, const V2 *> &firstPair,
 
 
 void shuffle(void* context){
-    auto * tc = (ThreadContext*) context;
 
+    auto * tc = (ThreadContext*) context;
     // While there are still keys to reduce:
     while(!(tc->intermediatePairs->empty()))
     {
@@ -113,12 +125,9 @@ void shuffle(void* context){
         auto cur_key = cur_pair.first;
         bool is_key_alone = true;
 
-//        (*vectors_iter)->pop_back();  // delete pair from vector
-//        vectors_iter++; // Move on to next vector of pairs
-
+        std::cout<<(((tc->intermediatePairs)[0])).size()<< std::endl;
         (((tc->intermediatePairs)[0])).pop_back();
-
-
+        std::cout<<(((tc->intermediatePairs)[0])).size()<< std::endl;
 
         // Create new vectors to hold the values of cur_key :
         auto vec_to_push = new IntermediateVec;
@@ -129,12 +138,6 @@ void shuffle(void* context){
         tc->shuffledPairs->push_back(vec_to_push);
         pthread_mutex_unlock((tc->mutex));
 
-        if (vectors_iter ==  tc->intermediatePairs->end())
-        {
-            vectors_iter = tc->intermediatePairs->begin();
-
-        }
-
         // Iterate over the remaining pairs:
         while(vectors_iter !=  tc->intermediatePairs->end())
         {
@@ -144,15 +147,12 @@ void shuffle(void* context){
             while(vec_iter != (*vectors_iter)->rend())
             {
                 auto next_pair = *vec_iter;
-                if(next_pair.first < cur_key)
+                if(*next_pair.first < *cur_key)
                 {
-                    std::cout<<"in here small  " << ((const KChar*)next_pair.first)->c << "  is smaller than " << cur_pair.first <<std::endl;
                     break;
                 }
-                if(cur_key < next_pair.first)
+                if(*cur_key < *next_pair.first)
                 {
-                    std::cout<<"in here bigger  " << ((const KChar*)next_pair.first)->c << "  is bigger than " << cur_pair.first <<std::endl;
-
                     vec_iter++;
                     continue;
                 }
@@ -162,27 +162,19 @@ void shuffle(void* context){
                 // case equal
                 auto to_push = std::pair<K2*, V2*>(next_pair.first, next_pair.second);
                 pthread_mutex_lock((tc->mutex));
-
-//                (*vectors_iter)->pop_back();
-
                 auto iter = (*vectors_iter)->begin();
                 while(*iter < *vec_iter || *vec_iter < *iter)
                 {
                     iter++;
                 }
 
-                std::cout<< (*vectors_iter)->size() << std::endl;
                 vec_iter ++;
                 (*vectors_iter)->erase(iter);
-                std::cout<< (*vectors_iter)->size() << std::endl;
-
-
 
                 tc->shuffledPairs->back()->push_back(to_push);
                 sem_post((tc->semi));
                 is_key_alone = false;
                 pthread_mutex_unlock((tc->mutex));
-                break;
             }
 
             if ((*vectors_iter)->empty())
@@ -195,8 +187,6 @@ void shuffle(void* context){
         }
         if (is_key_alone)
         {
-            std::cout<< "alone key" << std::endl;
-
             sem_post((tc->semi));
         }
     }
@@ -241,12 +231,38 @@ void* foo(void* arg)
         shuffle(tc);
     });
 
+    tc->barrier->barrier();  // todo delete this
+
+    std::call_once(p_flag, [&tc]()
+    {
+        if(true) {
+            for(int i = 0; i < 21; i++) {
+
+                std::cerr << "Size:  " << (*(tc->shuffledPairs))[i]->size() << std::endl;
+                for (auto vec: *(*(tc->shuffledPairs))[i]) {
+                    char c = ((const KChar *) vec.first)->c;
+                    int count = ((const VCount *) vec.second)->count;
+                    std::cerr << "The character " << c << " appeared " << count << " time%s" << std::endl;
+                }
+                std::flush(std::cerr);
+
+            }
+        }
+    });
+
+
     while((!(tc->finishedShuffle)) || (!tc->shuffledPairs->empty()))
     {
         sem_wait((tc->semi)); // Wait until there is an available shuffled vector to reduce
-        auto to_reduce = tc->shuffledPairs->back();  // Get the last shuffled vector
-        tc->shuffledPairs->pop_back();  // Delete the last shuffled vector
+
+        auto index = (*(tc->index_counter))++;
+        IntermediateVec* to_reduce = (*(tc->shuffledPairs))[index];  // Get the next shuffled vector
         (tc->client)->reduce(to_reduce, tc);
+
+
+//        auto to_reduce = tc->shuffledPairs->back();  // Get the last shuffled vector
+//        tc->shuffledPairs->pop_back();  // Delete the last shuffled vector
+
     }
 }
 
@@ -261,7 +277,10 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     ThreadContext contexts[multiThreadLevel];
     Barrier barrier(multiThreadLevel);
     std::atomic<int> atomic_counter(0);
+    std::atomic<int> index_counter(0);
+
     pthread_mutex_t mutex(PTHREAD_MUTEX_INITIALIZER);
+    pthread_mutex_t mutex_r(PTHREAD_MUTEX_INITIALIZER);
 
     sem_t* sem = new sem_t;
     sem_init(sem, 0, 0);
@@ -292,7 +311,9 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
                         false,
                         &outputVec,
                         &mutex,
-                        sem
+                        &mutex_r,
+                        sem,
+                        &index_counter
                 };
     }
 
