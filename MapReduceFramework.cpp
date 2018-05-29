@@ -31,11 +31,15 @@ public:
     char c;
 };
 
-
+class VCount : public V2, public V3{
+public:
+    VCount(int count) : count(count) { }
+    int count;
+};
 //======================================================== //
 std::once_flag shuffled_flag;
 std::mutex mtx;
-bool debug = false;
+bool debug = true;
 
 struct ThreadContext {
     int threadID;  // ID of the current thread
@@ -67,7 +71,6 @@ void emit2 (K2* key, V2* value, void* context)
     pthread_mutex_unlock((tc->mutex));
 
 }
-
 
 void emit3 (K3* key, V3* value, void* context)
 {
@@ -109,8 +112,6 @@ void shuffle(void* context){
 //        vectors_iter++; // Move on to next vector of pairs
 
         (((tc->intermediatePairs)[0])).pop_back();
-
-
 
         // Create new vectors to hold the values of cur_key :
         auto vec_to_push = new IntermediateVec;
@@ -195,7 +196,9 @@ void shuffle(void* context){
     tc->finishedShuffle = true;
 }
 
-
+bool comp(const std::pair< const K2*, const V2 *> &firstPair, const std::pair< const K2*, const V2 *> &secondPair){
+    return *firstPair.first < *secondPair.first;
+}
 
 void* foo(void* arg)
 {
@@ -225,7 +228,7 @@ void* foo(void* arg)
 
     // Sort the vector in the threadID cell:
     auto toSort = (*(tc->intermediatePairs))[tc->threadID];
-    std::sort(toSort->begin(), toSort->end());
+    std::sort(toSort->begin(), toSort->end(), comp);
     tc->barrier->barrier();
 
 
@@ -253,9 +256,6 @@ void* foo(void* arg)
         (tc->client)->reduce(to_reduce, tc);
     }
 }
-
-
-
 
 
 void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputVec, OutputVec& outputVec, int multiThreadLevel)
