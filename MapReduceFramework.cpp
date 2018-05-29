@@ -41,10 +41,11 @@ public:
 
 int sem_value = 0;
 std::mutex mtx;
-bool debug = true;
-
+bool debug = false;
+bool debug2 = false;
 //======================================================== //
 std::once_flag shuffled_flag;
+std::once_flag p_flag;
 
 struct ThreadContext {
     int threadID;  // ID of the current thread
@@ -60,6 +61,8 @@ struct ThreadContext {
     OutputVec* output_vec;  // Given vector to emit the output
     pthread_mutex_t* mutex;
     sem_t* semi;
+    std::atomic<int>* index_counter;
+
 
 };
 
@@ -98,7 +101,7 @@ void shuffle(void* context){
     bool first_iter = true;
     // While there are still keys to reduce:
 
-    std::cout<< "How Many vectors in intemediatePairs" << tc->intermediatePairs->size() << std::endl;
+//    std::cout<< "How Many vectors in intemediatePairs" << tc->intermediatePairs->size() << std::endl;
     while(!(tc->intermediatePairs->empty()))
     {
         auto vectors_iter = tc->intermediatePairs->begin(); // get iterator on the vectors
@@ -121,9 +124,6 @@ void shuffle(void* context){
         auto cur_key = cur_pair.first;
         bool is_key_alone = true;
 
-//        (*vectors_iter)->pop_back();  // delete pair from vector
-//        vectors_iter++; // Move on to next vector of pairs
-//        (((tc->intermediatePairs)[0])).pop_back();
         tc->intermediatePairs->front()->pop_back();
         // Create new vectors to hold the values of cur_key :
         auto vec_to_push = new IntermediateVec;
@@ -180,7 +180,6 @@ void shuffle(void* context){
                 sem_post((tc->semi));
                 is_key_alone = false;
                 pthread_mutex_unlock((tc->mutex));
-                continue;
             }
 
             if ((*vectors_iter)->empty())
@@ -193,8 +192,6 @@ void shuffle(void* context){
         }
         if (is_key_alone)
         {
-            std::cout<< "alone key" << std::endl;
-
             sem_post((tc->semi));
         }
     }
@@ -251,26 +248,36 @@ void* foo(void* arg)
     });
 
     tc->barrier->barrier();
-    std::cerr << "Size of shuffled:  " << (tc->shuffledPairs)->size() << std::endl;
 
-    if(debug) {
-        mtx.lock();
-        std::cerr << "Size:  " << (*(tc->shuffledPairs))[0]->size() << std::endl;
-        for (auto vec: *(*(tc->shuffledPairs))[0]) {
-            char c = ((const KChar *) vec.first)->c;
-            int count = ((const VCount *) vec.second)->count;
-            std::cerr << "The character " << c << " appeared " << count << " time%s" << std::endl;
+    std::call_once(p_flag, [&tc]()
+    {
+        if(debug2) {
+            for(int i = 0; i < 21; i++) {
+
+                std::cerr << "Size:  " << (*(tc->shuffledPairs))[i]->size() << std::endl;
+                for (auto vec: *(*(tc->shuffledPairs))[i]) {
+                    char c = ((const KChar *) vec.first)->c;
+                    int count = ((const VCount *) vec.second)->count;
+                    std::cerr << "The character " << c << " appeared " << count << " time%s" << std::endl;
+                }
+                std::flush(std::cerr);
+
+            }
         }
-        std::flush(std::cerr);
-        mtx.unlock();
-    }
+    });
 
     while((!(tc->finishedShuffle)) || (!tc->shuffledPairs->empty()))
     {
+//        sem_wait((tc->semi)); // Wait until there is an available shuffled vector to reduce
+//        auto to_reduce = tc->shuffledPairs->back();  // Get the last shuffled vector
+//        tc->shuffledPairs->pop_back();  // Delete the last shuffled vector
+//        (tc->client)->reduce(to_reduce, tc);
+
         sem_wait((tc->semi)); // Wait until there is an available shuffled vector to reduce
-        auto to_reduce = tc->shuffledPairs->back();  // Get the last shuffled vector
-        tc->shuffledPairs->pop_back();  // Delete the last shuffled vector
+        auto index = (*(tc->index_counter))++;
+        IntermediateVec* to_reduce = (*(tc->shuffledPairs))[index];  // Get the next shuffled vector
         (tc->client)->reduce(to_reduce, tc);
+
     }
 }
 
@@ -281,6 +288,7 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     ThreadContext contexts[multiThreadLevel];
     Barrier barrier(multiThreadLevel);
     std::atomic<int> atomic_counter(0);
+    std::atomic<int> index_counter(0);
     pthread_mutex_t mutex(PTHREAD_MUTEX_INITIALIZER);
     sem_t* sem = new sem_t;
     sem_init(sem, 0, 0);
@@ -311,7 +319,8 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
                         false,
                         &outputVec,
                         &mutex,
-                        sem
+                        sem,
+                        &index_counter
                 };
     }
 
