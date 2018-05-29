@@ -48,6 +48,7 @@ bool finished_shuffle = false;
 
 
 
+
 struct ThreadContext {
     int threadID;  // ID of the current thread
     Barrier* barrier;  // Barrier to join the threads
@@ -86,12 +87,12 @@ void emit2 (K2* key, V2* value, void* context)
 void emit3 (K3* key, V3* value, void* context)
 {
     auto * tc = (ThreadContext*) context;
-
     // Lock mutex and push the pair to the output vector:
     pthread_mutex_lock((tc->mutex));
     (tc->output_vec)->push_back(std::pair<K3*, V3*>(key, value));
     pthread_mutex_unlock((tc->mutex));
 }
+
 
 bool comp(const std::pair< const K2*, const V2 *> &firstPair,
           const std::pair< const K2*, const V2 *> &secondPair)
@@ -190,12 +191,6 @@ void shuffle(void* context){
 
         }
         sem_post((tc->semi));
-        counter ++;
-//        if (is_key_alone)
-//        {
-//            sem_post((tc->semi));
-//            counter ++ ;
-//        }
     }
     finished_shuffle = true;
 }
@@ -247,9 +242,17 @@ void* foo(void* arg)
 //        std::cout<<counter<<std::endl;
 //        auto t = (*(tc->shuffledPairs)).size();
 //        std::cout<<t<<std::endl;
-        if(finished_shuffle & (index == (tc->shuffledPairs->size() - 1)))
+
+        auto p = (*(tc->index_counter))++;
+        if(finished_shuffle & (p >= (tc->shuffledPairs->size() - 1)))
         {
             break;
+
+        }
+        else
+        {
+            (*(tc->index_counter))--;
+
         }
 
         sem_wait((tc->semi)); // Wait until there is an available shuffled vector to reduce
@@ -257,6 +260,7 @@ void* foo(void* arg)
         IntermediateVec* to_reduce = (*(tc->shuffledPairs))[index];  // Get the next shuffled vector
         (tc->client)->reduce(to_reduce, tc);
     }
+    return nullptr;
 }
 
 
