@@ -31,18 +31,11 @@ public:
     char c;
 };
 
-class VCount : public V2, public V3{
-public:
-    VCount(int count) : count(count) { }
-    int count;
-};
-
-
 
 //======================================================== //
 std::once_flag shuffled_flag;
 std::mutex mtx;
-bool debug = true;
+bool debug = false;
 
 struct ThreadContext {
     int threadID;  // ID of the current thread
@@ -66,14 +59,15 @@ void emit2 (K2* key, V2* value, void* context)
     auto * tc = (ThreadContext*) context;
 
     // Lock mutex and push the pair to the intermediate vector:
-//    pthread_mutex_lock((tc->mutex));
+    pthread_mutex_lock((tc->mutex));
 
     ((*(tc->intermediatePairs))[tc->threadID])->push_back(
             std::pair<K2*, V2*>(key, value));
 
-//    pthread_mutex_unlock((tc->mutex));
+    pthread_mutex_unlock((tc->mutex));
 
 }
+
 
 void emit3 (K3* key, V3* value, void* context)
 {
@@ -86,12 +80,14 @@ void emit3 (K3* key, V3* value, void* context)
 }
 
 void shuffle(void* context){
-
     auto * tc = (ThreadContext*) context;
+
+    // While there are still keys to reduce:
     while(!(tc->intermediatePairs->empty()))
     {
         auto vectors_iter = tc->intermediatePairs->begin(); // get iterator on the vectors
         auto vec_iter = (*vectors_iter)->rbegin(); // get iterator on the first vector
+
         while((vec_iter == (*vectors_iter)->rend()))
         {
             vectors_iter = (tc->intermediatePairs)->erase(vectors_iter);
@@ -104,45 +100,83 @@ void shuffle(void* context){
             }
         }
 
-
         auto to_pop = *vec_iter; // get the pair from the cur_vector
         auto cur_pair = std::pair<K2*, V2*>(to_pop.first, to_pop.second); // build new pair
         auto cur_key = cur_pair.first;
-        (*vectors_iter)->pop_back();  // delete pair from vector
-        vectors_iter++;
+        bool is_key_alone = true;
 
+//        (*vectors_iter)->pop_back();  // delete pair from vector
+//        vectors_iter++; // Move on to next vector of pairs
+
+        (((tc->intermediatePairs)[0])).pop_back();
+
+
+
+        // Create new vectors to hold the values of cur_key :
         auto vec_to_push = new IntermediateVec;
 
-//        pthread_mutex_lock((tc->mutex));
+        // Push the new vector to the shuffled pairs vector:
+        pthread_mutex_lock((tc->mutex));
         vec_to_push->push_back(cur_pair);
         tc->shuffledPairs->push_back(vec_to_push);
-//        pthread_mutex_unlock((tc->mutex));
+        pthread_mutex_unlock((tc->mutex));
 
+        if (vectors_iter ==  tc->intermediatePairs->end())
+        {
+            vectors_iter = tc->intermediatePairs->begin();
 
+        }
+
+        // Iterate over the remaining pairs:
         while(vectors_iter !=  tc->intermediatePairs->end())
         {
-            vec_iter = (*vectors_iter)->rbegin();
+            vec_iter = (*vectors_iter)->rbegin();  // End of the current vector
+
+            // Iterate over the vector until finding the same of smaller value:
             while(vec_iter != (*vectors_iter)->rend())
             {
                 auto next_pair = *vec_iter;
                 if(next_pair.first < cur_key)
                 {
+                    std::cout<<"in here small  " << ((const KChar*)next_pair.first)->c << "  is smaller than " << cur_pair.first <<std::endl;
                     break;
                 }
                 if(cur_key < next_pair.first)
                 {
+                    std::cout<<"in here bigger  " << ((const KChar*)next_pair.first)->c << "  is bigger than " << cur_pair.first <<std::endl;
+
                     vec_iter++;
                     continue;
                 }
+
+                std::cout<<"in here equal" << std::endl;
+
                 // case equal
                 auto to_push = std::pair<K2*, V2*>(next_pair.first, next_pair.second);
-//                pthread_mutex_lock((tc->mutex));
-                (*vectors_iter)->pop_back();
+                pthread_mutex_lock((tc->mutex));
+
+//                (*vectors_iter)->pop_back();
+
+                auto iter = (*vectors_iter)->begin();
+                while(*iter < *vec_iter || *vec_iter < *iter)
+                {
+                    iter++;
+                }
+
+                std::cout<< (*vectors_iter)->size() << std::endl;
+                vec_iter ++;
+                (*vectors_iter)->erase(iter);
+                std::cout<< (*vectors_iter)->size() << std::endl;
+
+
+
                 tc->shuffledPairs->back()->push_back(to_push);
                 tc->semi->up();
-//                pthread_mutex_unlock((tc->mutex));
+                is_key_alone = false;
+                pthread_mutex_unlock((tc->mutex));
                 break;
             }
+
             if ((*vectors_iter)->empty())
             {
                 // delete the empty vector and get the next position:
@@ -151,9 +185,17 @@ void shuffle(void* context){
             }
             vectors_iter++;
         }
+        if (is_key_alone)
+        {
+            std::cout<< "alone key" << std::endl;
+
+            tc->semi->up();
+        }
     }
     tc->finishedShuffle = true;
 }
+
+
 
 void* foo(void* arg)
 {
@@ -182,18 +224,14 @@ void* foo(void* arg)
     }
 
     // Sort the vector in the threadID cell:
-
-    tc->barrier->barrier();
-    mtx.lock();
     auto toSort = (*(tc->intermediatePairs))[tc->threadID];
-    auto y = toSort->begin();
     std::sort(toSort->begin(), toSort->end());
-    mtx.unlock();
+    tc->barrier->barrier();
+
 
     if(debug) {
         mtx.lock();
         std::cerr << "ThreadID " << tc->threadID << std::endl;
-        std::cerr << "Size:  " << (*(tc->intermediatePairs))[tc->threadID]->size() << std::endl;
         for (auto vec: *(*(tc->intermediatePairs))[tc->threadID]) {
             char c = ((const KChar *) vec.first)->c;
             int count = ((const VCount *) vec.second)->count;
@@ -202,24 +240,23 @@ void* foo(void* arg)
         std::flush(std::cerr);
         mtx.unlock();
     }
-
     std::call_once(shuffled_flag, [&tc]()
     {
         shuffle(tc);
     });
 
-
-    while((!(tc->finishedShuffle)) || (!tc->intermediatePairs->empty()))
+    while((!(tc->finishedShuffle)) || (!tc->shuffledPairs->empty()))
     {
-        std::cout << "IN " << std::endl;
         tc->semi->down();  // Wait until there is an available shuffled vector to reduce
         auto to_reduce = tc->shuffledPairs->back();  // Get the last shuffled vector
         tc->shuffledPairs->pop_back();  // Delete the last shuffled vector
         (tc->client)->reduce(to_reduce, tc);
-        std::cout << "OUT " << std::endl;
     }
-
 }
+
+
+
+
 
 void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputVec, OutputVec& outputVec, int multiThreadLevel)
 {
@@ -271,7 +308,7 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
         pthread_join(threads[i], nullptr);
     }
 
-    std::cerr << "Finish runMapReduce";
+    std::cerr << "Finish runMapReduce"<<std::endl;
 }
 
 

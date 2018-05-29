@@ -6,11 +6,18 @@
 #include "Semaphore.h"
 
 void Semaphore::down() {
+    std::cout<<"Semaphor down!, n = " << "   ---   " <<n_ << std::endl;
+
     while(n_ <= 0){}
-    --n_;
+
+    std::cout<<"Semaphor down!, n = "<<n_ << std::endl;
+
+    n_ --;
 }
 
 void Semaphore::up() {
-    std::cerr << "HIIIIIIIII" << std::endl;
-    ++n_;
+    std::cout<<"Semaphor up!" << std::endl;
+    n_++;
+    std::cout<<"n = "<<n_ << std::endl;
+
 }
