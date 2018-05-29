@@ -2,6 +2,7 @@
 // Created by hareld10 on 5/27/18.
 //
 
+#include <iostream>
 #include "Semaphore.h"
 
 void Semaphore::down() {
@@ -10,5 +11,6 @@ void Semaphore::down() {
 }
 
 void Semaphore::up() {
+    std::cerr << "HIIIIIIIII" << std::endl;
     ++n_;
 }
