@@ -10,14 +10,35 @@
 
 
 
-
 //======================= Constants ======================= //
 
+class VString : public V1 {
+public:
+    VString(std::string content) : content(content) { }
+    std::string content;
+};
 
-
+class KChar : public K2, public K3{
+public:
+    KChar(char c) : c(c) { }
+    virtual bool operator<(const K2 &other) const {
+        return c < static_cast<const KChar&>(other).c;
+    }
+    virtual bool operator<(const K3 &other) const {
+        return c < static_cast<const KChar&>(other).c;
+    }
+    char c;
+};
+class VCount : public V2, public V3{
+public:
+    VCount(int count) : count(count) { }
+    int count;
+};
 
 //======================================================== //
 std::once_flag shuffled_flag;
+std::mutex mtx;
+bool debug = false;
 
 struct ThreadContext {
     int threadID;  // ID of the current thread
@@ -141,23 +162,30 @@ void* foo(void* arg)
     std::sort(toSort->begin(), toSort->end());
     tc->barrier->barrier();
 
-    // To_Print !
-    for (std::vector<char>::const_iterator i = path.begin(); i != path.end(); ++i)
-    {
-        std::cout << *i << ' ';
+
+    if(debug) {
+        mtx.lock();
+        std::cerr << "ThreadID " << tc->threadID << std::endl;
+        for (auto vec: *(*(tc->intermediatePairs))[tc->threadID]) {
+            char c = ((const KChar *) vec.first)->c;
+            int count = ((const VCount *) vec.second)->count;
+            std::cerr << "The character " << c << " appeared " << count << " time%s" << std::endl;
+        }
+        std::flush(std::cerr);
+        mtx.unlock();
     }
     std::call_once(shuffled_flag, [&tc]()
     {
         shuffle(tc);
     });
 
-    while(!((!tc->finishedShuffle) & (tc->intermediatePairs->empty())))
-    {
-        tc->semi->down();  // Wait until there is an available shuffled vector to reduce
-        auto to_reduce = tc->shuffledPairs->back();  // Get the last shuffled vector
-        tc->shuffledPairs->pop_back();  // Delete the last shuffled vector
-        (tc->client)->reduce(to_reduce, tc);
-    }
+//    while(!((!tc->finishedShuffle) & (tc->intermediatePairs->empty())))
+//    {
+//        tc->semi->down();  // Wait until there is an available shuffled vector to reduce
+//        auto to_reduce = tc->shuffledPairs->back();  // Get the last shuffled vector
+//        tc->shuffledPairs->pop_back();  // Delete the last shuffled vector
+//        (tc->client)->reduce(to_reduce, tc);
+//    }
 
 
 }
