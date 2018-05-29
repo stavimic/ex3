@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <algorithm>    // std::sort
 #include <mutex>
+#include "Semaphore.h"
 
 
 
@@ -28,14 +29,15 @@ struct ThreadContext {
     std::vector<IntermediateVec*>* intermediatePairs;  // Intermediary vector
     std::vector<IntermediateVec*>* shuffledPairs;  // Shuffled vector
     InputVec *myValues;  // Values given to the current threads
-    bool startedShuffle;  // Did we start shuffling yet
     bool finishedShuffle;  // Did we finish shuffling
     OutputVec* output_vec;  // Given vector to emit the output
     pthread_mutex_t* mutex;
+    Semaphore* semi;
+
 };
 
 void emit2 (K2* key, V2* value, void* context){
-    auto * tc = (ThreadContext*) context;4
+//    auto * tc = (ThreadContext*) context;
 //    tc->intermediatePairs->push_back(std::pair<K2*, V2*>(key, value));
     auto * tc = (ThreadContext*) context;
 
@@ -62,21 +64,53 @@ void emit3 (K3* key, V3* value, void* context)
 
 
 void shuffle(void* context){
+
     auto * tc = (ThreadContext*) context;
-    K2* cur_key = nullptr;
+    while(!tc->intermediatePairs->empty())
+    {
+        auto vectors_iter = tc->intermediatePairs->begin(); // get iterator on the vectors
+        auto vec_iter = (*vectors_iter)->rbegin(); // get iterator on the first vector
+        auto to_pop = *vec_iter; // get the pair from the cur_vector
+        auto cur_pair = std::pair<K2*, V2*>(to_pop.first, to_pop.second); // build new pair
+        auto cur_key = cur_pair.first;
+        (*vectors_iter)->pop_back();  // delete pair from vector
+        vectors_iter++;
 
-    auto num_of_vectors = static_cast<int>((*(tc->intermediatePairs)).size());
+        auto vec_to_push = new IntermediateVec;
+        vec_to_push->push_back(cur_pair);
+        tc->shuffledPairs->push_back(vec_to_push);
 
-    while(true){
-        for(auto intermediate_vec: (*(tc->intermediatePairs))){
-            auto iter = intermediate_vec->rbegin();
-            if(iter->first){
-
+        while(vectors_iter !=  tc->intermediatePairs->end())
+        {
+            vec_iter = (*vectors_iter)->rbegin();
+            while(vec_iter != (*vectors_iter)->rend())
+            {
+                auto next_pair = *vec_iter;
+                if(next_pair.first < cur_key)
+                {
+                    break;
+                }
+                if(cur_key < next_pair.first)
+                {
+                    vec_iter++;
+                    continue;
+                }
+                // case equal
+                auto to_push = std::pair<K2*, V2*>(next_pair.first, next_pair.second);
+                (*vectors_iter)->pop_back();
+                tc->shuffledPairs->back()->push_back(to_push);
+                break;
             }
+            if ((*vectors_iter)->empty())
+            {
+                vectors_iter = (tc->intermediatePairs)->erase(vectors_iter); // delete the empty vector and get the next position
+                continue;
+            }
+            vectors_iter++;
         }
-
+        tc->semi->up();
     }
-
+    tc->finishedShuffle = true;
 }
 
 
@@ -84,7 +118,6 @@ void shuffle(void* context){
 void* foo(void* arg)
 {
     ThreadContext* tc = (ThreadContext*) arg;
-
 
     bool flag = true;
     //Retrieve the next input element:
@@ -110,10 +143,18 @@ void* foo(void* arg)
     std::sort(tc->intermediatePairs->begin(), tc->intermediatePairs->end());
     tc->barrier->barrier();
 
-    std::call_once(shuffled_flag, []()
+    std::call_once(shuffled_flag, [&tc]()
     {
-        shuffle();
+        shuffle(tc);
     });
+
+    while(!((!tc->finishedShuffle) & (tc->intermediatePairs->empty())))
+    {
+        tc->semi->down();  // Wait until there is an available shuffled vector to reduce
+        auto to_reduce = tc->shuffledPairs->back();  // Get the last shuffled vector
+        tc->shuffledPairs->pop_back();  // Delete the last shuffled vector
+        (tc->client)->reduce(to_reduce, tc);
+    }
 
 
 }
@@ -155,9 +196,9 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
                        shuffledPairs,
                         new InputVec,
                         false,
-                        false,
                         &outputVec,
-                        &mutex
+                        &mutex,
+                        new Semaphore(0)
                 };
     }
 

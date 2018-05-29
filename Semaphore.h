@@ -10,6 +10,7 @@
 
 class Semaphore {
 
+public:
     explicit Semaphore(int n):n_(n){}
     void down();
     void up();
