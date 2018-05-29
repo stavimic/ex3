@@ -51,7 +51,6 @@ void emit2 (K2* key, V2* value, void* context){
 
 }
 
-
 void emit3 (K3* key, V3* value, void* context)
 {
     auto * tc = (ThreadContext*) context;
@@ -61,7 +60,6 @@ void emit3 (K3* key, V3* value, void* context)
     (tc->output_vec)->push_back(std::pair<K3*, V3*>(key, value));
     pthread_mutex_unlock((tc->mutex));
 }
-
 
 void shuffle(void* context){
 
@@ -113,8 +111,6 @@ void shuffle(void* context){
     tc->finishedShuffle = true;
 }
 
-
-
 void* foo(void* arg)
 {
     ThreadContext* tc = (ThreadContext*) arg;
@@ -143,6 +139,11 @@ void* foo(void* arg)
     std::sort(tc->intermediatePairs->begin(), tc->intermediatePairs->end());
     tc->barrier->barrier();
 
+    // To_Print !
+    for (std::vector<char>::const_iterator i = path.begin(); i != path.end(); ++i)
+    {
+        std::cout << *i << ' ';
+    }
     std::call_once(shuffled_flag, [&tc]()
     {
         shuffle(tc);
@@ -158,10 +159,6 @@ void* foo(void* arg)
 
 
 }
-    
-
-
-
 
 void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputVec, OutputVec& outputVec, int multiThreadLevel)
 {
