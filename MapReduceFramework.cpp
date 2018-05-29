@@ -140,7 +140,9 @@ void* foo(void* arg)
         (tc->client)->map(pair.first, pair.second, tc);
     }
 
-    std::sort(tc->intermediatePairs->begin(), tc->intermediatePairs->end());
+    // Sort the vector in the tid cell:
+    auto toSort = (*(tc->intermediatePairs))[tc->threadID];
+    std::sort(toSort->begin(), toSort->end());
     tc->barrier->barrier();
 
     std::call_once(shuffled_flag, [&tc]()
