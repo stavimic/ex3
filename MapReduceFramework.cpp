@@ -44,7 +44,8 @@ int sem_value = 0;
 std::once_flag shuffled_flag;
 std::once_flag p_flag;
 int counter = 0;
-bool finished_shuffle = false;
+
+
 
 
 
@@ -59,12 +60,12 @@ struct ThreadContext {
     std::vector<IntermediateVec*>* intermediatePairs;  // Intermediary vector
     std::vector<IntermediateVec*>* shuffledPairs;  // Shuffled vector
     InputVec *myValues;  // Values given to the current threads
-//    bool* finishedShuffle;  // Did we finish shuffling
     OutputVec* output_vec;  // Given vector to emit the output
     pthread_mutex_t* mutex;
     pthread_mutex_t* reduce_mutex;
     sem_t* semi;
     std::atomic<int>* index_counter;
+    std::atomic<int>* finishedShuffling; // Did we finish shuffling
 
 
 };
@@ -118,7 +119,7 @@ void shuffle(void* context){
 
             if (tc->intermediatePairs->empty())
             {
-                finished_shuffle = true;
+                (*(tc->finishedShuffling))++;
                 return;
             }
         }
@@ -192,7 +193,7 @@ void shuffle(void* context){
         }
         sem_post((tc->semi));
     }
-    finished_shuffle = true;
+    (*(tc->finishedShuffling))++;
 }
 
 void* foo(void* arg)
@@ -231,20 +232,11 @@ void* foo(void* arg)
     {
         shuffle(tc);
     });
-
-
-
-    tc->barrier->barrier();  // todo delete this
     auto index = 0;
-
-    while((!(finished_shuffle)) || (!tc->shuffledPairs->empty()))
+    while((!(*(tc->finishedShuffling))) || (!tc->shuffledPairs->empty()))
     {
-//        std::cout<<counter<<std::endl;
-//        auto t = (*(tc->shuffledPairs)).size();
-//        std::cout<<t<<std::endl;
-
         auto p = (*(tc->index_counter))++;
-        if(finished_shuffle & (p >= (tc->shuffledPairs->size() - 1)))
+        if((*(tc->finishedShuffling))& (p >= (tc->shuffledPairs->size() - 1)))
         {
             break;
 
@@ -264,9 +256,6 @@ void* foo(void* arg)
 }
 
 
-
-
-
 void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputVec, OutputVec& outputVec, int multiThreadLevel)
 {
 
@@ -275,8 +264,10 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     Barrier barrier(multiThreadLevel);
     std::atomic<int> atomic_counter(0);
     std::atomic<int> index_counter(0);
+    std::atomic<int> shuffle_boolean(0);
     pthread_mutex_t mutex(PTHREAD_MUTEX_INITIALIZER);
     pthread_mutex_t mutex_r(PTHREAD_MUTEX_INITIALIZER);
+    bool* finished_shuffling = new bool(false);
 
     sem_t* sem = new sem_t;
     sem_init(sem, 0, 0);
@@ -307,7 +298,8 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
                         &mutex,
                         &mutex_r,
                         sem,
-                        &index_counter
+                        &index_counter,
+                        &shuffle_boolean
                 };
     }
 
