@@ -13,24 +13,7 @@
 
 //======================= Constants ======================= //
 
-//
-//class VString : public V1 {
-//public:
-//    VString(std::string content) : content(content) { }
-//    std::string content;
-//};
-//
-//class KChar : public K2, public K3{
-//public:
-//    KChar(char c) : c(c) { }
-//    virtual bool operator<(const K2 &other) const {
-//        return c < static_cast<const KChar&>(other).c;
-//    }
-//    virtual bool operator<(const K3 &other) const {
-//        return c < static_cast<const KChar&>(other).c;
-//    }
-//    char c;
-//};
+
 
 
 //======================================================== //
@@ -147,6 +130,7 @@ void shuffle(void* context){
             }
             vectors_iter++;
         }
+        tc->semi->up();
     }
     tc->finishedShuffle = true;
 }
@@ -184,11 +168,8 @@ void* foo(void* arg)
     std::sort(toSort->begin(), toSort->end());
     tc->barrier->barrier();
 
-
-
     std::call_once(shuffled_flag, [&tc]()
     {
-
         shuffle(tc);
     });
 
@@ -199,6 +180,8 @@ void* foo(void* arg)
         tc->shuffledPairs->pop_back();  // Delete the last shuffled vector
         (tc->client)->reduce(to_reduce, tc);
     }
+
+
 }
     
 
