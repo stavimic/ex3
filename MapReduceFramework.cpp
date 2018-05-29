@@ -130,7 +130,6 @@ void shuffle(void* context){
             }
             vectors_iter++;
         }
-        tc->semi->up();
     }
     tc->finishedShuffle = true;
 }
