@@ -18,6 +18,8 @@
 
 //======================================================== //
 std::once_flag shuffled_flag;
+std::mutex mtx;
+bool debug = false;
 
 struct ThreadContext {
     int threadID;  // ID of the current thread
@@ -60,7 +62,6 @@ void emit3 (K3* key, V3* value, void* context)
     (tc->output_vec)->push_back(std::pair<K3*, V3*>(key, value));
     pthread_mutex_unlock((tc->mutex));
 }
-
 
 void shuffle(void* context){
 
@@ -167,6 +168,18 @@ void* foo(void* arg)
     std::sort(toSort->begin(), toSort->end());
     tc->barrier->barrier();
 
+
+    if(debug) {
+        mtx.lock();
+        std::cerr << "ThreadID " << tc->threadID << std::endl;
+        for (auto vec: *(*(tc->intermediatePairs))[tc->threadID]) {
+            char c = ((const KChar *) vec.first)->c;
+            int count = ((const VCount *) vec.second)->count;
+            std::cerr << "The character " << c << " appeared " << count << " time%s" << std::endl;
+        }
+        std::flush(std::cerr);
+        mtx.unlock();
+    }
     std::call_once(shuffled_flag, [&tc]()
     {
         shuffle(tc);
@@ -182,7 +195,7 @@ void* foo(void* arg)
 
 
 }
-    
+
 
 
 
