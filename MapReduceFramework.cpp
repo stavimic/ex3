@@ -6,7 +6,9 @@
 #include <pthread.h>
 #include <algorithm>    // std::sort
 #include <mutex>
-#include "Semaphore.h"
+#include <semaphore.h>
+//#include "Semaphore.h"
+#include <semaphore.h>
 
 
 
@@ -31,11 +33,9 @@ public:
     char c;
 };
 
-
+int sem_value = 0;
 //======================================================== //
 std::once_flag shuffled_flag;
-std::mutex mtx;
-bool debug = false;
 
 struct ThreadContext {
     int threadID;  // ID of the current thread
@@ -50,7 +50,7 @@ struct ThreadContext {
     bool finishedShuffle;  // Did we finish shuffling
     OutputVec* output_vec;  // Given vector to emit the output
     pthread_mutex_t* mutex;
-    Semaphore* semi;
+    sem_t* semi;
 
 };
 
@@ -78,6 +78,14 @@ void emit3 (K3* key, V3* value, void* context)
     (tc->output_vec)->push_back(std::pair<K3*, V3*>(key, value));
     pthread_mutex_unlock((tc->mutex));
 }
+
+bool comp(const std::pair< const K2*, const V2 *> &firstPair,
+          const std::pair< const K2*, const V2 *> &secondPair)
+{
+    return *firstPair.first < *secondPair.first;
+}
+
+
 
 void shuffle(void* context){
     auto * tc = (ThreadContext*) context;
@@ -171,7 +179,7 @@ void shuffle(void* context){
 
 
                 tc->shuffledPairs->back()->push_back(to_push);
-                tc->semi->up();
+                sem_post((tc->semi));
                 is_key_alone = false;
                 pthread_mutex_unlock((tc->mutex));
                 break;
@@ -189,7 +197,7 @@ void shuffle(void* context){
         {
             std::cout<< "alone key" << std::endl;
 
-            tc->semi->up();
+            sem_post((tc->semi));
         }
     }
     tc->finishedShuffle = true;
@@ -225,21 +233,9 @@ void* foo(void* arg)
 
     // Sort the vector in the threadID cell:
     auto toSort = (*(tc->intermediatePairs))[tc->threadID];
-    std::sort(toSort->begin(), toSort->end());
+    std::sort(toSort->begin(), toSort->end(), comp);
     tc->barrier->barrier();
 
-
-    if(debug) {
-        mtx.lock();
-        std::cerr << "ThreadID " << tc->threadID << std::endl;
-        for (auto vec: *(*(tc->intermediatePairs))[tc->threadID]) {
-            char c = ((const KChar *) vec.first)->c;
-            int count = ((const VCount *) vec.second)->count;
-            std::cerr << "The character " << c << " appeared " << count << " time%s" << std::endl;
-        }
-        std::flush(std::cerr);
-        mtx.unlock();
-    }
     std::call_once(shuffled_flag, [&tc]()
     {
         shuffle(tc);
@@ -247,7 +243,7 @@ void* foo(void* arg)
 
     while((!(tc->finishedShuffle)) || (!tc->shuffledPairs->empty()))
     {
-        tc->semi->down();  // Wait until there is an available shuffled vector to reduce
+        sem_wait((tc->semi)); // Wait until there is an available shuffled vector to reduce
         auto to_reduce = tc->shuffledPairs->back();  // Get the last shuffled vector
         tc->shuffledPairs->pop_back();  // Delete the last shuffled vector
         (tc->client)->reduce(to_reduce, tc);
@@ -266,6 +262,9 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     Barrier barrier(multiThreadLevel);
     std::atomic<int> atomic_counter(0);
     pthread_mutex_t mutex(PTHREAD_MUTEX_INITIALIZER);
+
+    sem_t* sem = new sem_t;
+    sem_init(sem, 0, 0);
 
 
     // Create the vector of IntermediateVecs, one for each thread
@@ -293,7 +292,7 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
                         false,
                         &outputVec,
                         &mutex,
-                        new Semaphore(0)
+                        sem
                 };
     }
 
