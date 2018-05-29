@@ -13,7 +13,24 @@
 
 //======================= Constants ======================= //
 
-
+//
+//class VString : public V1 {
+//public:
+//    VString(std::string content) : content(content) { }
+//    std::string content;
+//};
+//
+//class KChar : public K2, public K3{
+//public:
+//    KChar(char c) : c(c) { }
+//    virtual bool operator<(const K2 &other) const {
+//        return c < static_cast<const KChar&>(other).c;
+//    }
+//    virtual bool operator<(const K3 &other) const {
+//        return c < static_cast<const KChar&>(other).c;
+//    }
+//    char c;
+//};
 
 
 //======================================================== //
@@ -36,9 +53,8 @@ struct ThreadContext {
 
 };
 
-void emit2 (K2* key, V2* value, void* context){
-//    auto * tc = (ThreadContext*) context;
-//    tc->intermediatePairs->push_back(std::pair<K2*, V2*>(key, value));
+void emit2 (K2* key, V2* value, void* context)
+{
     auto * tc = (ThreadContext*) context;
 
     // Lock mutex and push the pair to the intermediate vector:
@@ -66,10 +82,25 @@ void emit3 (K3* key, V3* value, void* context)
 void shuffle(void* context){
 
     auto * tc = (ThreadContext*) context;
-    while(!tc->intermediatePairs->empty())
+    while(!(tc->intermediatePairs->empty()))
     {
         auto vectors_iter = tc->intermediatePairs->begin(); // get iterator on the vectors
         auto vec_iter = (*vectors_iter)->rbegin(); // get iterator on the first vector
+
+
+
+        while((vec_iter == (*vectors_iter)->rend()))
+        {
+            vectors_iter = (tc->intermediatePairs)->erase(vectors_iter);
+            vec_iter = (*vectors_iter)->rbegin(); // get iterator on the first vector
+
+            if (tc->intermediatePairs->empty())
+            {
+                return;
+            }
+        }
+
+
         auto to_pop = *vec_iter; // get the pair from the cur_vector
         auto cur_pair = std::pair<K2*, V2*>(to_pop.first, to_pop.second); // build new pair
         auto cur_key = cur_pair.first;
@@ -77,8 +108,12 @@ void shuffle(void* context){
         vectors_iter++;
 
         auto vec_to_push = new IntermediateVec;
+
+        pthread_mutex_lock((tc->mutex));
         vec_to_push->push_back(cur_pair);
         tc->shuffledPairs->push_back(vec_to_push);
+        pthread_mutex_unlock((tc->mutex));
+
 
         while(vectors_iter !=  tc->intermediatePairs->end())
         {
@@ -97,18 +132,21 @@ void shuffle(void* context){
                 }
                 // case equal
                 auto to_push = std::pair<K2*, V2*>(next_pair.first, next_pair.second);
+                pthread_mutex_lock((tc->mutex));
                 (*vectors_iter)->pop_back();
                 tc->shuffledPairs->back()->push_back(to_push);
+                tc->semi->up();
+                pthread_mutex_unlock((tc->mutex));
                 break;
             }
             if ((*vectors_iter)->empty())
             {
-                vectors_iter = (tc->intermediatePairs)->erase(vectors_iter); // delete the empty vector and get the next position
+                // delete the empty vector and get the next position:
+                vectors_iter = (tc->intermediatePairs)->erase(vectors_iter);
                 continue;
             }
             vectors_iter++;
         }
-        tc->semi->up();
     }
     tc->finishedShuffle = true;
 }
@@ -130,9 +168,10 @@ void* foo(void* arg)
             break;
 
         }
-
+        pthread_mutex_lock((tc->mutex));
         std::pair<K1*, V1*> nextPair = (*(tc->inputPairs))[nextIndex];
         (tc->myValues)->push_back(nextPair);  // Add the next pair to tc's input data
+        pthread_mutex_unlock((tc->mutex));
     }
 
     // Finished with the input processing, now perform the map phase:
@@ -140,13 +179,16 @@ void* foo(void* arg)
         (tc->client)->map(pair.first, pair.second, tc);
     }
 
-    // Sort the vector in the tid cell:
+    // Sort the vector in the threadID cell:
     auto toSort = (*(tc->intermediatePairs))[tc->threadID];
     std::sort(toSort->begin(), toSort->end());
     tc->barrier->barrier();
 
+
+
     std::call_once(shuffled_flag, [&tc]()
     {
+
         shuffle(tc);
     });
 
@@ -157,8 +199,6 @@ void* foo(void* arg)
         tc->shuffledPairs->pop_back();  // Delete the last shuffled vector
         (tc->client)->reduce(to_reduce, tc);
     }
-
-
 }
     
 
