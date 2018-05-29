@@ -277,7 +277,8 @@ void* foo(void* arg)
         auto index = (*(tc->index_counter))++;
         IntermediateVec* to_reduce = (*(tc->shuffledPairs))[index];  // Get the next shuffled vector
         (tc->client)->reduce(to_reduce, tc);
-
+        std::cerr << "In Reduce" << tc->shuffledPairs->empty() << std::endl;
+        std::cerr << "In Reduce" <<std::endl;
     }
 }
 
