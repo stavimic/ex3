@@ -12,44 +12,6 @@
 
 
 
-
-//======================= Constants ======================= //
-
-class VString : public V1 {
-public:
-    VString(std::string content) : content(content) { }
-    std::string content;
-};
-
-class KChar : public K2, public K3{
-public:
-    KChar(char c) : c(c) { }
-    virtual bool operator<(const K2 &other) const {
-        return c < static_cast<const KChar&>(other).c;
-    }
-    virtual bool operator<(const K3 &other) const {
-        return c < static_cast<const KChar&>(other).c;
-    }
-    char c;
-};
-class VCount : public V2, public V3{
-public:
-    VCount(int count) : count(count) { }
-    int count;
-};
-
-
-int sem_value = 0;
-//======================================================== //
-std::once_flag shuffled_flag;
-std::once_flag p_flag;
-int counter = 0;
-
-
-
-
-
-
 struct ThreadContext {
     int threadID;  // ID of the current thread
     Barrier* barrier;  // Barrier to join the threads
@@ -66,6 +28,8 @@ struct ThreadContext {
     sem_t* semi;
     std::atomic<int>* index_counter;
     std::atomic<int>* finishedShuffling; // Did we finish shuffling
+    std::once_flag* shuffled_flag;
+
 
 
 };
@@ -228,7 +192,7 @@ void* foo(void* arg)
     tc->barrier->barrier();
 
 
-    std::call_once(shuffled_flag, [&tc]()
+    std::call_once(*(tc->shuffled_flag), [&tc]()
     {
         shuffle(tc);
     });
@@ -258,7 +222,7 @@ void* foo(void* arg)
 
 void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputVec, OutputVec& outputVec, int multiThreadLevel)
 {
-
+    std::once_flag shuffled_flag;
     pthread_t threads[multiThreadLevel];
     ThreadContext contexts[multiThreadLevel];
     Barrier barrier(multiThreadLevel);
@@ -268,7 +232,6 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     pthread_mutex_t mutex(PTHREAD_MUTEX_INITIALIZER);
     pthread_mutex_t mutex_r(PTHREAD_MUTEX_INITIALIZER);
     bool* finished_shuffling = new bool(false);
-
     sem_t* sem = new sem_t;
     sem_init(sem, 0, 0);
 
@@ -299,7 +262,8 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
                         &mutex_r,
                         sem,
                         &index_counter,
-                        &shuffle_boolean
+                        &shuffle_boolean,
+                        &shuffled_flag
                 };
     }
 
@@ -314,7 +278,7 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
         pthread_join(threads[i], nullptr);
     }
 
-    std::cerr << "Finish runMapReduce"<<std::endl;
+//    std::cerr << "Finish runMapReduce"<<std::endl;
 }
 
 
