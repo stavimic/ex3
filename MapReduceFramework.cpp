@@ -212,9 +212,11 @@ void* foo(void* arg)
         }
 
         sem_wait((tc->semi)); // Wait until there is an available shuffled vector to reduce
+//        pthread_mutex_lock(tc->reduce_mutex);
         index = (*(tc->index_counter))++;
         IntermediateVec* to_reduce = (*(tc->shuffledPairs))[index];  // Get the next shuffled vector
         (tc->client)->reduce(to_reduce, tc);
+//        pthread_mutex_unlock(tc->reduce_mutex);
     }
     return nullptr;
 }
@@ -279,6 +281,7 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
     }
 
 //    std::cerr << "Finish runMapReduce"<<std::endl;
+
 }
 
 
