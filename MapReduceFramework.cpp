@@ -28,7 +28,10 @@ struct ThreadContext {
     int num_of_threads;
 };
 
-
+/// push values to intermediatePairs
+/// \param key
+/// \param value
+/// \param context
 void emit2 (K2* key, V2* value, void* context)
 {
     auto * tc = (ThreadContext*) context;
@@ -43,7 +46,10 @@ void emit2 (K2* key, V2* value, void* context)
 
 }
 
-
+/// push values to final vector
+/// \param key
+/// \param value
+/// \param context
 void emit3 (K3* key, V3* value, void* context)
 {
     auto * tc = (ThreadContext*) context;
@@ -53,7 +59,10 @@ void emit3 (K3* key, V3* value, void* context)
     pthread_mutex_unlock((tc->mutex));
 }
 
-
+/// function used as comperator between 2 pairs
+/// \param firstPair
+/// \param secondPair
+/// \return ans base on the first elements in pair
 bool comp(const std::pair< const K2*, const V2 *> &firstPair,
           const std::pair< const K2*, const V2 *> &secondPair)
 {
@@ -106,6 +115,7 @@ void shuffle(void* context){
                 auto next_pair = *vec_iter;
                 if(*next_pair.first < *cur_key)
                 {
+                    // nothing to find in this vector - GetOut!
                     break;
                 }
                 if(*cur_key < *next_pair.first)
@@ -139,26 +149,28 @@ void shuffle(void* context){
         }
         sem_post((tc->semi));
     }
+    /// finished shuffle so boost the semaphore to ensure all threads will be at the stage where
+    /// they need to reduce
     for(int i = 0;  i < tc->num_of_threads; i++)
     {
         sem_post((tc->semi));
     }
 }
 
-void* foo(void* arg)
+/// each thred runs this function
+/// \param arg the context of the thread
+/// \return
+void* startRoutine(void *arg)
 {
     ThreadContext* tc = (ThreadContext*) arg;
 
-    bool flag = true;
     //Retrieve the next input element:
-    while (flag)
+    while (true)
     {
         unsigned int nextIndex = (*(tc->atomic_counter))++;
         if (nextIndex >= (*(tc->inputPairs)).size())
         {
-            flag = false;
             break;
-
         }
         pthread_mutex_lock((tc->mutex));
         std::pair<K1*, V1*> nextPair = (*(tc->inputPairs))[nextIndex];
@@ -174,15 +186,17 @@ void* foo(void* arg)
     // Sort the vector in the threadID cell:
     auto toSort = (*(tc->intermediatePairs))[tc->threadID];
     std::sort(toSort->begin(), toSort->end(), comp);
+    // wait all threads will come here to start shuffle
     tc->barrier->barrier();
 
-
+    // shuffled called only once - first thread to catch
     std::call_once(*(tc->shuffled_flag), [&tc]()
     {
         shuffle(tc);
     });
 
     unsigned int index = 0;
+    // work until all reduced has finished
     while(true)
     {
         sem_wait((tc->semi)); // Wait until there is an available shuffled vector to reduce
@@ -192,23 +206,27 @@ void* foo(void* arg)
             break;
         }
 
-
         IntermediateVec* to_reduce = (*(tc->shuffledPairs))[index];  // Get the next shuffled vector
         (tc->client)->reduce(to_reduce, tc);
     }
     return nullptr;
 }
 
-
+/// main function to run the whole Framework
+/// \param client according to instructions
+/// \param inputVec input values
+/// \param outputVec where the output values will be at the end
+/// \param multiThreadLevel num of threads to use
 void runMapReduceFramework(const MapReduceClient& client,
                            const InputVec& inputVec, OutputVec& outputVec,
                            int multiThreadLevel) {
-    std::once_flag shuffled_flag;
-    pthread_t threads[multiThreadLevel];
-    ThreadContext contexts[multiThreadLevel];
-    Barrier barrier(multiThreadLevel);
-    std::atomic<unsigned int> atomic_counter(0);
-    std::atomic<unsigned int> index_counter(0);
+
+    std::once_flag shuffled_flag;  // to ensure shuffle runs only once
+    pthread_t threads[multiThreadLevel]; // array of the threads
+    ThreadContext contexts[multiThreadLevel];  // array of the contexts
+    Barrier barrier(multiThreadLevel);  // barrier shared between all
+    std::atomic<unsigned int> atomic_counter(0);  // in order to retrieve the input safely
+    std::atomic<unsigned int> index_counter(0);  // count amount of reduced operations
     pthread_mutex_t mutex(PTHREAD_MUTEX_INITIALIZER);
     bool *finished_shuffling = new bool(false);
     sem_t *sem = new sem_t;
@@ -248,7 +266,7 @@ void runMapReduceFramework(const MapReduceClient& client,
     //Initialize threads
     for (int i = 0; i < multiThreadLevel; ++i)
     {
-        pthread_create(threads + i, nullptr, foo, contexts + i);
+        pthread_create(threads + i, nullptr, startRoutine, contexts + i);
     }
 
 
@@ -259,13 +277,13 @@ void runMapReduceFramework(const MapReduceClient& client,
     }
 
 
+    /// free up memory
     delete finished_shuffling;
     delete sem;
     inter_vec->clear();
     delete inter_vec;
     shuffledPairs->clear();
     delete shuffledPairs;
-
 
     for (int i = 0; i < multiThreadLevel; ++i)
     {
