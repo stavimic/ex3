@@ -10,49 +10,10 @@
 
 
 
-
-
-
-
-
-///////////////////////////
-
-
-
-class VString : public V1 {
-public:
-VString(std::string content) : content(content) { }
-std::string content;
-};
-
-class KChar : public K2, public K3{
-public:
-    KChar(char c) : c(c) { }
-    virtual bool operator<(const K2 &other) const {
-        return c < static_cast<const KChar&>(other).c;
-    }
-    virtual bool operator<(const K3 &other) const {
-        return c < static_cast<const KChar&>(other).c;
-    }
-    char c;
-};
-
-
-class VCount : public V2, public V3{
-public:
-    VCount(int count) : count(count) { }
-    int count;
-};
-
-
-
-/////////////////////////
-
-
 struct ThreadContext {
     int threadID;  // ID of the current thread
     Barrier* barrier;  // Barrier to join the threads
-    std::atomic<int>* atomic_counter;
+    std::atomic<unsigned int>* atomic_counter;
 
     const MapReduceClient* client;  //Given client
     const InputVec *inputPairs;  // Input vector
@@ -62,21 +23,11 @@ struct ThreadContext {
     OutputVec* output_vec;  // Given vector to emit the output
     pthread_mutex_t* mutex;
     sem_t* semi;
-    std::atomic<int>* index_counter;
-    std::atomic<int>* finishedShuffling; // Did we finish shuffling
+    std::atomic<unsigned int>* index_counter;
+    std::atomic<unsigned int>* finishedShuffling; // Did we finish shuffling
     std::once_flag* shuffled_flag;  // One-time Flag
-    std::atomic<int>* reduced_counter;
     int num_of_threads;
-
-
-
-
-
 };
-
-
-std::once_flag p_flag;
-
 
 
 void emit2 (K2* key, V2* value, void* context)
@@ -110,12 +61,10 @@ bool comp(const std::pair< const K2*, const V2 *> &firstPair,
     return *firstPair.first < *secondPair.first;
 }
 
-int shuffled_counter=0;
 
 
 void shuffle(void* context){
     auto * tc = (ThreadContext*) context;
-    bool first_iter = true;
     // While there are still keys to reduce:
     while(!(tc->intermediatePairs->empty()))
     {
@@ -207,7 +156,7 @@ void* foo(void* arg)
     //Retrieve the next input element:
     while (flag)
     {
-        int nextIndex = (*(tc->atomic_counter))++;
+        unsigned int nextIndex = (*(tc->atomic_counter))++;
         if (nextIndex >= (*(tc->inputPairs)).size())
         {
             flag = false;
@@ -236,26 +185,7 @@ void* foo(void* arg)
         shuffle(tc);
     });
 
-
-//    std::call_once(p_flag, [&tc]()
-//    {
-//        if(true) {
-//            for(int i = 0; i < 21; i++) {
-//
-//                std::cerr << "Size:  " << (*(tc->shuffledPairs))[i]->size() << std::endl;
-//                for (auto vec: *(*(tc->shuffledPairs))[i]) {
-//                    char c = ((const KChar *) vec.first)->c;
-//                    int count = ((const VCount *) vec.second)->count;
-//                    std::cerr << "The character " << c << " appeared " << count << " time%s" << std::endl;
-//                }
-//                std::flush(std::cerr);
-//
-//            }
-//        }
-//    });
-
-
-    int index = 0;
+    unsigned int index = 0;
     while(true)
     {
         sem_wait((tc->semi)); // Wait until there is an available shuffled vector to reduce
@@ -273,31 +203,30 @@ void* foo(void* arg)
 }
 
 
-void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputVec, OutputVec& outputVec, int multiThreadLevel)
-{
+void runMapReduceFramework(const MapReduceClient& client,
+                           const InputVec& inputVec, OutputVec& outputVec,
+                           int multiThreadLevel) {
     std::once_flag shuffled_flag;
     pthread_t threads[multiThreadLevel];
     ThreadContext contexts[multiThreadLevel];
     Barrier barrier(multiThreadLevel);
-    std::atomic<int> atomic_counter(0);
-    std::atomic<int> index_counter(0);
-    std::atomic<int> reduced_counter(0);
-    std::atomic<int> shuffle_boolean(0);
+    std::atomic<unsigned int> atomic_counter(0);
+    std::atomic<unsigned int> index_counter(0);
+    std::atomic<unsigned int> shuffle_boolean(0);
     pthread_mutex_t mutex(PTHREAD_MUTEX_INITIALIZER);
-    pthread_mutex_t mutex_r(PTHREAD_MUTEX_INITIALIZER);
-    bool* finished_shuffling = new bool(false);
-    sem_t* sem = new sem_t;
+    bool *finished_shuffling = new bool(false);
+    sem_t *sem = new sem_t;
     sem_init(sem, 0, 0);
 
     // Create the vector of IntermediateVecs, one for each thread
-    auto inter_vec = new std::vector<IntermediateVec*>();
-    for(int i = 0; i < multiThreadLevel; i++)
-    {
+    auto inter_vec = new std::vector<IntermediateVec *>();
+    for (int i = 0; i < multiThreadLevel; i++) {
         inter_vec->push_back(new IntermediateVec);
     }
 
     // Vector of all the shuffled pairs:
-    auto shuffledPairs = new std::vector<IntermediateVec*>();
+    auto shuffledPairs = new std::vector<IntermediateVec *>();
+
 
     // Initialize contexts
     for (int i = 0; i < multiThreadLevel; ++i) {
@@ -307,9 +236,9 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
                         &barrier,
                         &atomic_counter,
                         &client,
-                       &inputVec,
-                       inter_vec,
-                       shuffledPairs,
+                        &inputVec,
+                        inter_vec,
+                        shuffledPairs,
                         new InputVec,
                         &outputVec,
                         &mutex,
@@ -317,23 +246,38 @@ void runMapReduceFramework(const MapReduceClient& client, const InputVec& inputV
                         &index_counter,
                         &shuffle_boolean,
                         &shuffled_flag,
-                        &reduced_counter,
                         multiThreadLevel
                 };
     }
 
     //Initialize threads
-    for (int i = 0; i < multiThreadLevel; ++i) {
+    for (int i = 0; i < multiThreadLevel; ++i)
+    {
         pthread_create(threads + i, nullptr, foo, contexts + i);
     }
 
 
     //Wait for threads to finish
-    for (int i = 0; i < multiThreadLevel; ++i) {
+    for (int i = 0; i < multiThreadLevel; ++i)
+    {
         pthread_join(threads[i], nullptr);
     }
 
-//    std::cerr << "Finish runMapReduce"<<std::endl;
+
+    delete finished_shuffling;
+    delete sem;
+    inter_vec->clear();
+    delete inter_vec;
+    shuffledPairs->clear();
+    delete shuffledPairs;
+
+
+    for (int i = 0; i < multiThreadLevel; ++i)
+    {
+        delete (contexts[i].myValues);
+
+    }
 }
+
 
 
