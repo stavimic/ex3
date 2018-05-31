@@ -43,6 +43,7 @@ int sem_value = 0;
 //======================================================== //
 std::once_flag shuffled_flag;
 std::once_flag p_flag;
+bool debug2 = true;
 int counter = 0;
 bool finished_shuffle = false;
 
@@ -247,16 +248,35 @@ void* foo(void* arg)
 //        std::cout<<counter<<std::endl;
 //        auto t = (*(tc->shuffledPairs)).size();
 //        std::cout<<t<<std::endl;
-        if(finished_shuffle & (index == (tc->shuffledPairs->size() - 1)))
+        if(finished_shuffle & (index == (tc->shuffledPairs->size() - 3)))
         {
             break;
         }
-
+//        if(index ==20){
+//            break;
+//        }
         sem_wait((tc->semi)); // Wait until there is an available shuffled vector to reduce
         index = (*(tc->index_counter))++;
         IntermediateVec* to_reduce = (*(tc->shuffledPairs))[index];  // Get the next shuffled vector
         (tc->client)->reduce(to_reduce, tc);
     }
+
+    std::call_once(p_flag, [&tc]()
+    {
+        if(debug2) {
+            for(int i = 0; i < 21; i++) {
+
+                std::cerr << "Size:  " << (tc->output_vec->size()) << std::endl;
+                for (auto vec: tc->output_vec[i]) {
+                    char c = ((const KChar *) vec.first)->c;
+                    int count = ((const VCount *) vec.second)->count;
+                    std::cerr << "The character " << c << " appeared " << count << " time%s" << std::endl;
+                }
+                std::flush(std::cerr);
+
+            }
+        }
+    });
 }
 
 
