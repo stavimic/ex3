@@ -220,7 +220,7 @@ void* foo(void* arg)
         std::pair<K1*, V1*> nextPair = (*(tc->inputPairs))[nextIndex];
         (tc->myValues)->push_back(nextPair);  // Add the next pair to tc's input data
         pthread_mutex_unlock((tc->mutex));
-    }
+    }\
 
     // Finished with the input processing, now perform the map phase:
     for(auto pair : *(tc->myValues)) {
@@ -261,22 +261,22 @@ void* foo(void* arg)
         (tc->client)->reduce(to_reduce, tc);
     }
 
-    std::call_once(p_flag, [&tc]()
-    {
-        if(debug2) {
-            for(int i = 0; i < 21; i++) {
-
-                std::cerr << "Size:  " << (tc->output_vec->size()) << std::endl;
-                for (auto vec: tc->output_vec[i]) {
-                    char c = ((const KChar *) vec.first)->c;
-                    int count = ((const VCount *) vec.second)->count;
-                    std::cerr << "The character " << c << " appeared " << count << " time%s" << std::endl;
-                }
-                std::flush(std::cerr);
-
-            }
-        }
-    });
+//    std::call_once(p_flag, [&tc]()
+//    {
+//        if(debug2) {
+//            for(int i = 0; i < 21; i++) {
+//
+//                std::cerr << "Size:  " << (tc->output_vec->size()) << std::endl;
+//                for (auto vec: tc->output_vec[i]) {
+//                    char c = ((const KChar *) vec.first)->c;
+//                    int count = ((const VCount *) vec.second)->count;
+//                    std::cerr << "The character " << c << " appeared " << count << " time%s" << std::endl;
+//                }
+//                std::flush(std::cerr);
+//
+//            }
+//        }
+//    });
 }
 
 
