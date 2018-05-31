@@ -24,7 +24,6 @@ struct ThreadContext {
     pthread_mutex_t* mutex;
     sem_t* semi;
     std::atomic<unsigned int>* index_counter;
-    std::atomic<unsigned int>* finishedShuffling; // Did we finish shuffling
     std::once_flag* shuffled_flag;  // One-time Flag
     int num_of_threads;
 };
@@ -78,7 +77,6 @@ void shuffle(void* context){
 
             if (tc->intermediatePairs->empty())
             {
-                (*(tc->finishedShuffling))++;
                 return;
             }
         }
@@ -141,7 +139,6 @@ void shuffle(void* context){
         }
         sem_post((tc->semi));
     }
-    (*(tc->finishedShuffling))++;
     for(int i = 0;  i < tc->num_of_threads; i++)
     {
         sem_post((tc->semi));
@@ -212,7 +209,6 @@ void runMapReduceFramework(const MapReduceClient& client,
     Barrier barrier(multiThreadLevel);
     std::atomic<unsigned int> atomic_counter(0);
     std::atomic<unsigned int> index_counter(0);
-    std::atomic<unsigned int> shuffle_boolean(0);
     pthread_mutex_t mutex(PTHREAD_MUTEX_INITIALIZER);
     bool *finished_shuffling = new bool(false);
     sem_t *sem = new sem_t;
@@ -244,7 +240,6 @@ void runMapReduceFramework(const MapReduceClient& client,
                         &mutex,
                         sem,
                         &index_counter,
-                        &shuffle_boolean,
                         &shuffled_flag,
                         multiThreadLevel
                 };
