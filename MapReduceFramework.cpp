@@ -196,7 +196,7 @@ void* foo(void* arg)
     {
         shuffle(tc);
     });
-    auto index = 0;
+    int index = 0;
     while((!(*(tc->finishedShuffling))) || (!tc->shuffledPairs->empty()))
     {
         auto p = (*(tc->index_counter))++;
@@ -210,13 +210,15 @@ void* foo(void* arg)
             (*(tc->index_counter))--;
 
         }
-
+        pthread_mutex_lock(tc->reduce_mutex);
+        std::cerr << p << std::endl;
+        pthread_mutex_unlock(tc->reduce_mutex);
         sem_wait((tc->semi)); // Wait until there is an available shuffled vector to reduce
-//        pthread_mutex_lock(tc->reduce_mutex);
-        index = (*(tc->index_counter))++;
-        IntermediateVec* to_reduce = (*(tc->shuffledPairs))[index];  // Get the next shuffled vector
+//        index = (*(tc->index_counter))++;
+        (*(tc->index_counter))++;
+        IntermediateVec* to_reduce = (*(tc->shuffledPairs))[(*(tc->index_counter))];  // Get the next shuffled vector
         (tc->client)->reduce(to_reduce, tc);
-//        pthread_mutex_unlock(tc->reduce_mutex);
+
     }
     return nullptr;
 }
